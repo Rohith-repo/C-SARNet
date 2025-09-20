@@ -93,11 +93,15 @@ python manage.py runserver
 
 ---
 
-## 👥 Contributors
+## Contributors
 
-* **Rohith B** – Deep Learning & Frontend Integration
-* **Devika C.V** – Backend Development
-* **Hariesh N.V** – Documentation & Research
+
+| Name | Role & Contributions |
+|------|--------------------|
+| [**Rohith B**](https://github.com/rohith-repo) | Frontend Development (50%), Deep Learning Model Implementation, API Integration |
+| [**Devika C.V**](https://github.com/devikacv20) | Frontend Development (50%), Backend & Database Development, Project Paper Research |
+| [**Hariesh N.V**](https://github.com/Hariesh2004) | Project Documentation & Research Support |
+
 
 ---
 
