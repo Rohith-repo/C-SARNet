@@ -1,0 +1,7 @@
+# Ensure Python and text files always use LF
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+
+# Windows batch scripts use CRLF
+*.bat text eol=crlf
