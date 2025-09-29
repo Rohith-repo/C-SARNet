@@ -85,8 +85,8 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': config('DB_NAME', default='sarnet_db'),
-        'USER': config('DB_USER', default='postgres'),
-        'PASSWORD': config('DB_PASSWORD', default=''),
+        'USER': config('DB_USER', default='sarnet_user'),
+        'PASSWORD': config('DB_PASSWORD', default='sarnet_password'),
         'HOST': config('DB_HOST', default='localhost'),
         'PORT': config('DB_PORT', default='5432'),
         'OPTIONS': {
@@ -135,7 +135,7 @@ AUTH_USER_MODEL = 'core.CustomUser'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+        #'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -222,6 +222,8 @@ SOCIALACCOUNT_PROVIDERS = {
 REST_USE_JWT = True
 JWT_AUTH_COOKIE = 'jwt-auth'
 JWT_AUTH_REFRESH_COOKIE = 'jwt-refresh'
+JWT_AUTH_RETURN_EXPIRATION = True  # Add this line
+JWT_AUTH_HTTPONLY = False  # Add this line for testing
 
 # CORS
 CORS_ALLOWED_ORIGINS = [
