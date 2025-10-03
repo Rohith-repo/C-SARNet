@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Alert, AlertDescription } from './ui/alert';
 import { Progress } from './ui/progress';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { 
   Upload, 
   Download, 
@@ -21,6 +21,7 @@ import {
   LogOut,
   Activity
 } from 'lucide-react';
+import { uploadImage, createProcessingJob, getProcessingJob } from '../lib/api';
 
 interface User {
   id: string;
@@ -78,6 +79,8 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
     }
   };
 
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
   const handleColorize = async () => {
     if (!uploadedFile) {
       toast.error('Please upload an image first');
@@ -86,71 +89,79 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
 
     setIsProcessing(true);
     setProcessingProgress(0);
-    setProcessingStatus('Uploading...');
+    setProcessingStatus('Uploading image...');
 
-    // Stage 1: Upload simulation (0-20%)
-    setTimeout(() => {
-      setProcessingProgress(20);
-      setProcessingStatus('Preprocessing image...');
-    }, 500);
+    try {
+      // Step 1: Upload image to backend
+      const uploadResult = await uploadImage(uploadedFile);
+      setProcessingProgress(25);
+      setProcessingStatus('Creating processing job...');
 
-    // Stage 2: Preprocessing (20-40%)
-    setTimeout(() => {
-      setProcessingProgress(40);
-      setProcessingStatus('Loading AI model...');
-    }, 1200);
-
-    // Stage 3: AI Model loading (40-60%)
-    setTimeout(() => {
-      setProcessingProgress(60);
+      // Step 2: Create processing job
+      const jobResult = await createProcessingJob(uploadResult.id);
+      setCurrentJobId(jobResult.id);
+      setProcessingProgress(50);
       setProcessingStatus('Processing with AI model...');
-    }, 1800);
 
-    // Stage 4: AI Processing (60-85%)
-    const processingInterval = setInterval(() => {
-      setProcessingProgress(prev => {
-        if (prev >= 85) {
-          clearInterval(processingInterval);
-          return 85;
+      // Step 3: Poll for job completion
+      const pollJob = async () => {
+        try {
+          const job = await getProcessingJob(jobResult.id);
+          
+          if (job.status === 'completed') {
+            setProcessingProgress(100);
+            setProcessingStatus('Processing complete!');
+            
+            // Set the result image URL if available
+            if (job.result_url) {
+              setColorizedImageUrl(job.result_url);
+            }
+            
+            setIsProcessing(false);
+            toast.success('Image colorization completed successfully!');
+            
+            setTimeout(() => {
+              setProcessingStatus('');
+            }, 2000);
+          } else if (job.status === 'failed') {
+            setIsProcessing(false);
+            toast.error(job.message || 'Processing failed');
+            setProcessingStatus('');
+          } else if (job.status === 'processing') {
+            // Update progress based on job progress if available
+            if (job.progress) {
+              setProcessingProgress(50 + (job.progress * 0.5)); // Scale to 50-100%
+            }
+            setProcessingStatus('AI model processing...');
+            
+            // Continue polling
+            setTimeout(pollJob, 2000);
+          } else {
+            // Job is still pending
+            setProcessingStatus('Waiting in queue...');
+            setTimeout(pollJob, 2000);
+          }
+        } catch (error) {
+          console.error('Error polling job:', error);
+          setTimeout(pollJob, 5000); // Retry after longer delay
         }
-        return prev + Math.random() * 8;
-      });
-    }, 200);
+      };
 
-    // Stage 5: Finalizing (85-100%)
-    setTimeout(() => {
-      clearInterval(processingInterval);
-      setProcessingProgress(90);
-      setProcessingStatus('Applying colorization...');
-    }, 2200);
+      // Start polling
+      setTimeout(pollJob, 2000);
 
-    setTimeout(() => {
-      setProcessingProgress(95);
-      setProcessingStatus('Finalizing image...');
-    }, 2600);
-
-    // Complete processing
-    setTimeout(() => {
-      setProcessingProgress(100);
-      setProcessingStatus('Done!');
-      
-      // Mock colorized image URL
-      setColorizedImageUrl('https://images.unsplash.com/photo-1697577418970-95d99b5a55cf?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhcnRpZmljaWFsJTIwaW50ZWxsaWdlbmNlJTIwdGVjaG5vbG9neXxlbnwxfHx8fDE3NTcwNDE3Nzl8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral');
+    } catch (error: any) {
       setIsProcessing(false);
-      toast.success('Colorization completed successfully!');
-      
-      // Reset status after a delay
-      setTimeout(() => {
-        setProcessingStatus('');
-      }, 2000);
-    }, 3200);
+      setProcessingStatus('');
+      toast.error(error.message || 'Failed to start processing');
+    }
   };
 
   const handleDownload = (format: 'png' | 'jpeg' | 'tiff') => {
     if (!colorizedImageUrl) return;
     
-    // Simulate download
-    toast.success(`Downloading as ${format.toUpperCase()}...`);
+    // TODO: Implement actual download from backend
+    toast.error('Download functionality requires backend integration');
   };
 
   return (

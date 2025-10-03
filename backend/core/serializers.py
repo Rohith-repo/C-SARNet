@@ -14,7 +14,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_of_birth',
                  'is_verified', 'password', 'created_at', 'updated_at']
         extra_kwargs = {
             'password': {'write_only': True},
@@ -175,3 +175,73 @@ class SourceDownloadsSerializer(serializers.ModelSerializer):
             'created_at': {'read_only': True},
             'updated_at': {'read_only': True},
         }
+
+from dj_rest_auth.serializers import LoginSerializer
+from dj_rest_auth.registration.serializers import RegisterSerializer
+from django.contrib.auth import authenticate
+from rest_framework import serializers
+
+class CustomLoginSerializer(LoginSerializer):
+    username = None  # disable default username handling
+    email = serializers.CharField(required=True)
+
+    def validate(self, attrs):
+        identifier = attrs.get("email")  # may be email or username from frontend "User ID" field
+        password = attrs.get("password")
+
+        if identifier and password:
+            ident_for_auth = identifier
+            # If identifier looks like a username (no @), resolve to email since USERNAME_FIELD = 'email'
+            if '@' not in identifier:
+                UserModel = get_user_model()
+                try:
+                    ident_for_auth = UserModel.objects.get(username=identifier).email
+                except UserModel.DoesNotExist:
+                    ident_for_auth = identifier  # try as-is
+            user = authenticate(self.context.get('request'), username=ident_for_auth, password=password)
+            if not user:
+                raise serializers.ValidationError("Invalid credentials")
+        else:
+            raise serializers.ValidationError("Email/username and password are required")
+        
+        attrs['user'] = user
+        return attrs
+
+
+class CustomRegisterSerializer(RegisterSerializer):
+    username = serializers.CharField(required=False, allow_blank=True)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+
+    def _ensure_username(self, base: str) -> str:
+        base = base or 'user'
+        unique = base
+        UserModel = get_user_model()
+        i = 1
+        while UserModel.objects.filter(username=unique).exists():
+            unique = f"{base}{i}"
+            i += 1
+        return unique
+
+    def get_cleaned_data(self):
+        data = super().get_cleaned_data()
+        email = self.validated_data.get('email', '')
+        provided_username = self.validated_data.get('username', '')
+        base = provided_username or (email.split('@')[0] if email else '')
+        data['username'] = self._ensure_username(base)
+        data['first_name'] = self.validated_data.get('first_name', '')
+        data['last_name'] = self.validated_data.get('last_name', '')
+        data['date_of_birth'] = self.validated_data.get('date_of_birth', None)
+        return data
+
+    def save(self, request):
+        user = super().save(request)
+        user.username = self.cleaned_data.get('username') or user.username
+        user.first_name = self.cleaned_data.get('first_name', '')
+        user.last_name = self.cleaned_data.get('last_name', '')
+        dob = self.cleaned_data.get('date_of_birth', None)
+        if dob:
+            user.date_of_birth = dob
+        user.save()
+        return user

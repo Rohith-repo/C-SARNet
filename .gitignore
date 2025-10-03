@@ -50,3 +50,28 @@ media
 Thumbs.db
 
 backend/venv/
+
+model/v_2/
+model/venv/
+model/Images/
+model/__pycache__/
+model/*.pyc
+model/*.pyo
+model/*.pyd
+model/*.so
+model/*.egg
+model/*.egg-info/
+model/build/
+model/dist/
+model/__pycache__/
+model/*.log
+model/*.pot
+model/db.sqlite3
+model/*.sqlite3
+model/.Python
+model/build/
+model/develop-eggs/
+model/downloads/
+model/C:\Users\gandl\Documents\Python Files\Projects\SAR image
+model/Pizx2pix_Percpetual_loss_history.npy
+model/Models/

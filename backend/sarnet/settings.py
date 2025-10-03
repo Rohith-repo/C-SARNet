@@ -78,7 +78,21 @@ TEMPLATES = [
     },
 ]
 
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+)
+
 WSGI_APPLICATION = 'sarnet.wsgi.application'
+
+REST_AUTH_SERIALIZERS = {
+    'LOGIN_SERIALIZER': 'core.serializers.CustomLoginSerializer'
+}
+
+REST_AUTH_REGISTER_SERIALIZERS = {
+    'REGISTER_SERIALIZER': 'core.serializers.CustomRegisterSerializer',
+}
+
 
 # Database
 DATABASES = {
@@ -154,7 +168,7 @@ REST_FRAMEWORK = {
 
 # Simple JWT
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=config('JWT_ACCESS_TOKEN_LIFETIME', default=60, cast=int)),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=config('JWT_ACCESS_TOKEN_LIFETIME', default=120, cast=int)),
     'REFRESH_TOKEN_LIFETIME': timedelta(minutes=config('JWT_REFRESH_TOKEN_LIFETIME', default=1440, cast=int)),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -181,15 +195,13 @@ SIMPLE_JWT = {
 
 # Django Allauth
 SITE_ID = 1
-ACCOUNT_SIGNUP_FIELDS = {
-    'email': {'required': True},
-    'username': {'required': False},
-    'password1': {'required': True},
-    'password2': {'required': True},
-}
 ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email']
+ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_CONFIRM_EMAIL_REDIRECT_URL = "http://localhost:3000/email-verified"
+
 
 # Social Auth
 SOCIALACCOUNT_PROVIDERS = {

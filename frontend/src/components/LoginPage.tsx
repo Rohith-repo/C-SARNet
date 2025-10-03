@@ -4,8 +4,9 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { ImageWithFallback } from './figma/ImageWithFallback';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Satellite, Brain, Zap, Github, ArrowLeft } from 'lucide-react';
+import { login, register, LoginData, RegisterData } from '../lib/api';
 
 interface LoginPageProps {
   isRegister?: boolean;
@@ -40,50 +41,96 @@ export function LoginPage({ isRegister = false, onLogin, onSwitchToRegister, onS
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     
-    if (isRegister) {
-      if (formData.password !== formData.confirmPassword) {
-        toast.error('Passwords do not match');
-        return;
+    try {
+      if (isRegister) {
+        if (formData.password !== formData.confirmPassword) {
+          toast.error('Passwords do not match');
+          return;
+        }
+        if (!formData.fullName || !formData.email || !formData.dob) {
+          toast.error('Please fill in all required fields');
+          return;
+        }
+
+        const [firstName, ...lastNameParts] = formData.fullName.split(' ');
+        const lastName = lastNameParts.join(' ');
+
+        const registerData: RegisterData = {
+          email: formData.email,
+          password1: formData.password,
+          password2: formData.confirmPassword,
+          first_name: firstName,
+          last_name: lastName,
+        };
+
+        const result = await register(registerData);
+
+        if (result.needsVerification) {
+          toast.success(result.detail || 'Please verify your email to complete registration.');
+          // Stay on page and let user go verify email
+          return;
+        }
+
+        if (!result.user) {
+          toast.error('Registration succeeded but user info not returned. Try logging in.');
+          return;
+        }
+
+        const userData = {
+          id: result.user.id,
+          fullName: `${result.user.first_name} ${result.user.last_name}`.trim(),
+          email: result.user.email,
+          dob: formData.dob,
+          avatar: ''
+        };
+
+        toast.success('Account created successfully!');
+        onLogin(userData);
+      } else {
+        if (!formData.userId || !formData.password) {
+          toast.error('Please fill in all fields');
+          return;
+        }
+
+        const loginData: LoginData = {
+          email: formData.userId, // Using userId as email for login
+          password: formData.password,
+        };
+
+        const result = await login(loginData);
+        
+        if (!result.user) {
+          toast.error('Login succeeded but user info missing');
+          return;
+        }
+
+        const userData = {
+          id: result.user.id,
+          fullName: `${result.user.first_name} ${result.user.last_name}`.trim(),
+          email: result.user.email,
+          dob: '1990-01-01', // Default since we don't have DOB from backend
+          avatar: ''
+        };
+
+        toast.success('Login successful!');
+        onLogin(userData);
       }
-      if (!formData.fullName || !formData.email || !formData.dob) {
-        toast.error('Please fill in all required fields');
-        return;
-      }
-    } else {
-      if (!formData.userId || !formData.password) {
-        toast.error('Please fill in all fields');
-        return;
-      }
+    } catch (error: any) {
+      toast.error(error.message || 'Authentication failed');
+    } finally {
+      setIsLoading(false);
     }
-
-    // Simulate successful login/registration
-    const userData = {
-      id: isRegister ? Date.now().toString() : formData.userId,
-      fullName: isRegister ? formData.fullName : 'John Doe',
-      email: isRegister ? formData.email : 'john.doe@example.com',
-      dob: isRegister ? formData.dob : '1990-01-01',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face'
-    };
-
-    toast.success(isRegister ? 'Account created successfully!' : 'Login successful!');
-    onLogin(userData);
   };
 
   const handleOAuthLogin = (provider: 'google' | 'github') => {
-    // Simulate OAuth login
-    const userData = {
-      id: Date.now().toString(),
-      fullName: `User from ${provider}`,
-      email: `user@${provider}.com`,
-      dob: '1990-01-01',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face'
-    };
-    
-    toast.success(`Logged in with ${provider}!`);
-    onLogin(userData);
+    // TODO: Implement OAuth with backend
+    toast.error(`${provider} OAuth requires backend integration`);
   };
 
   const handleResetSubmit = (e: React.FormEvent) => {
@@ -379,8 +426,8 @@ export function LoginPage({ isRegister = false, onLogin, onSwitchToRegister, onS
                     </>
                   )}
                   
-                  <Button type="submit" className="w-full">
-                    {isRegister ? 'Register' : 'Login'}
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? 'Please wait...' : (isRegister ? 'Register' : 'Login')}
                   </Button>
                 </form>
 
