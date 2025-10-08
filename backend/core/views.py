@@ -5,6 +5,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from model.inference import SARColorizer
 import uuid
 from .models import (
     CustomUser, UserCredentials, UserSettings, Sessions, Images,
@@ -18,6 +20,8 @@ from .serializers import (
     JobResultsSerializer, ViaEventsSerializer, ProcessingOutputsSerializer,
     SourceDownloadsSerializer
 )
+
+
 
 User = get_user_model()
 
@@ -397,3 +401,48 @@ class SourceDownloadsViewSet(viewsets.ModelViewSet):
 @permission_classes([AllowAny])
 def health_check(request):
     return Response({'status': 'ok'})
+
+# Initialize colorizer as a singleton
+_colorizer = None
+
+def get_colorizer():
+    global _colorizer
+    if _colorizer is None:
+        _colorizer = SARColorizer(checkpoint_path="model/checkpoint_epoch_200.pth")
+    return _colorizer
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def predict(request):
+    """Endpoint to colorize SAR images"""
+    if 'image' not in request.FILES:
+        return Response(
+            {'error': 'No image provided'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    image_file = request.FILES['image']
+    if not isinstance(image_file, InMemoryUploadedFile):
+        return Response(
+            {'error': 'Invalid file format'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        colorizer = get_colorizer()
+        # ✅ Change 'sar_colorizer' to 'colorizer'
+        result = colorizer.colorize(image_file)
+        
+        # ✅ Your colorize method returns a base64 string, not a dict
+        # So we need to adjust the response
+        return Response({
+            'colorized_image': result
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())  # Print full traceback for debugging
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

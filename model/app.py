@@ -1,66 +1,74 @@
+import torch
+import sys
+if "__path__" in dir(torch.classes):
+    del torch.classes.__path__
+import torch.nn as nn
+import torchvision.transforms as transforms
 import streamlit as st
 from PIL import Image
-import torch
-import torchvision.transforms as transforms
-from utils.UNetGenerator import UNetGenerator
-import warnings
-import logging
+from model import UnetGenerator  # Import your generator model
 
-# Suppress PyTorch/Streamlit warnings
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-logging.getLogger("streamlit.watcher.local_sources_watcher").setLevel(logging.ERROR)
-
-# Device configuration
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Load model
-try:
-    model_path = "Models/Pix2Pix/GEN/GEN.pth"
-    generator = UNetGenerator(in_channels=3, out_channels=3).to(device)
-    generator.load_state_dict(torch.load(model_path, map_location=device))
-    generator.eval()
-except FileNotFoundError:
-    st.error(f"Model file not found at {model_path}. Please ensure the model file exists in the correct location.")
-    st.stop()
-except Exception as e:
-    st.error(f"Error loading model: {str(e)}")
-    st.stop()
-
-def process_and_colorize(uploaded_file):
-    image = Image.open(uploaded_file).convert("RGB")
-    image = image.resize((256, 256), Image.Resampling.LANCZOS)
+# Load model checkpoint
+@st.cache_resource
+def load_model():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    checkpoint = torch.load("checkpoint_epoch_200.pth", map_location=device)
     
+    model = UnetGenerator(c_in=1, c_out=3)  # Ensure correct input/output channels
+    model.load_state_dict(checkpoint["generator_state_dict"])
+    model.eval()
+    return model.to(device)
+
+# Preprocess image
+def preprocess_image(image, image_size=(256, 256)):
     transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=1),  # Convert to grayscale
+        transforms.Resize(image_size),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
+        transforms.Normalize((0.5,), (0.5,))  # Normalize
     ])
-    
-    input_tensor = transform(image).unsqueeze(0).to(device)
+    return transform(image).unsqueeze(0)  # Add batch dimension
+
+# Generate Colorized Image
+def generate_colorized_image(image):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = load_model()  # Load model
+    input_tensor = preprocess_image(image).to(device)
     
     with torch.no_grad():
-        output_tensor = generator(input_tensor)
-        output_tensor = (output_tensor + 1) / 2.0
-        output_tensor = output_tensor.clamp(0, 1)
+        output_tensor = model(input_tensor)  # Pass through generator
     
-    output_image = transforms.ToPILImage()(output_tensor.squeeze(0))
-    return output_image
+    output_tensor = output_tensor.squeeze(0).cpu().detach()
+    output_tensor = (output_tensor * 0.5 + 0.5).clamp(0, 1)  # De-normalize
+    return transforms.ToPILImage()(output_tensor)
 
 # Streamlit UI
-st.title("Grayscale to Color Image Colorization")
+st.title("SAR Image Colorization App")
+st.write("Upload a SAR grayscale image, and the model will generate a colorized version.")
 
-uploaded_file = st.file_uploader("Upload a grayscale or RGB image", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Choose a SAR image...", type=["png", "jpg", "jpeg"])
 
 if uploaded_file is not None:
-    with st.spinner("Colorizing..."):
-        output_image = process_and_colorize(uploaded_file)
+    sar_image = Image.open(uploaded_file).convert("L")  # Ensure grayscale
     
-    # Create two columns
-    col1, col2 = st.columns(2)
-    
+    # Generate colorized output
+    colorized_image = generate_colorized_image(sar_image)
+
+    # Display images side by side
+    col1, col2 = st.columns(2)  # Create two columns
     with col1:
-        st.subheader("Original Image")
-        st.image(uploaded_file, width=300)
-    
+        st.image(sar_image, caption="Uploaded SAR Image", use_container_width=True)
     with col2:
-        st.subheader("Colorized Image")
-        st.image(output_image, width=300)
+        st.image(colorized_image, caption="Colorized Image", use_container_width=True)
+
+    # Download button
+    colorized_image.save("colorized_output.png")  # Save the image first
+    with open("colorized_output.png", "rb") as file:
+        st.download_button(
+            label="Download Colorized Image",
+            data=file,
+            file_name="colorized_output.png",
+            mime="image/png"
+        )
+
+

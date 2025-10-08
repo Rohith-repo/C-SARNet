@@ -1,5 +1,5 @@
 from django.urls import path, include
-from .views import health_check
+from .views import health_check, predict
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -31,6 +31,9 @@ router.register(r'source-downloads', SourceDownloadsViewSet, basename='sourcedow
 urlpatterns = [
     # Health check (public)
     path('health/', health_check, name='health_check'),
+    
+    # Prediction endpoint
+    path('predict/', predict, name='predict'),
 
     # JWT Token endpoints
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

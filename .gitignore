@@ -1,77 +1,67 @@
-frontend/node_modules
-# Python/Django.gitignore
+# Node modules
+frontend/node_modules/
 
-# Byte-compiled / optimized / DLL files
+# Python / Django
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
 
 # Distribution / packaging
-.Python
 build/
-develop-eggs/
 dist/
 downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
 *.egg-info/
-.installed.cfg
 *.egg
+.installed.cfg
 
-# Virtual environment
+# Virtual environments
 venv/
 ENV/
 env/
-*.env
+backend/venv/
+model/venv/
+model/v_2/
 
-# Django stuff:
+# Django / database / logs
 *.log
 *.pot
-*.pyc
 db.sqlite3
 *.sqlite3
+media/
+backend/media/
+backend/django.log
+backend/model/checkpoint_epoch_*.pth
 
-# Media
-media
-
-# VS Code settings
+# VS Code
 .vscode/
 
-# OS generated files
+# OS files
 .DS_Store
 Thumbs.db
 
-backend/venv/
-
-model/v_2/
-model/venv/
-model/Images/
+# Model generated files / outputs
 model/__pycache__/
 model/*.pyc
 model/*.pyo
 model/*.pyd
 model/*.so
 model/*.egg
-model/*.egg-info/
 model/build/
 model/dist/
-model/__pycache__/
-model/*.log
-model/*.pot
-model/db.sqlite3
-model/*.sqlite3
-model/.Python
-model/build/
-model/develop-eggs/
-model/downloads/
-model/C:\Users\gandl\Documents\Python Files\Projects\SAR image
-model/Pizx2pix_Percpetual_loss_history.npy
+model/Images/
 model/Models/
+model/fake_images/
+model/real_images/
+model/checkpoint_epoch_*.pth
+model/generator*.pth
+model/discriminator*.pth
+model/Pix2pix_Perceptual_loss_history.npy
+model/colorized_output.png
+model/plots/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Temporary / local files
+quries.txt

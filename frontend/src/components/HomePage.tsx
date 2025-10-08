@@ -19,9 +19,10 @@ import {
   HelpCircle,
   MessageCircle,
   LogOut,
-  Activity
+  Activity,
+  History
 } from 'lucide-react';
-import { uploadImage, createProcessingJob, getProcessingJob } from '../lib/api';
+import { colorizeImage, uploadImage } from '../lib/api';
 
 interface User {
   id: string;
@@ -39,6 +40,7 @@ interface HomePageProps {
 
 export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps) {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [processingStatus, setProcessingStatus] = useState('');
@@ -49,13 +51,28 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const validTypes = ['image/png', 'image/jpeg', 'image/tiff'];
+      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/tiff', 'image/tif'];
       if (!validTypes.includes(file.type)) {
         toast.error('Please upload a PNG, JPEG, or TIFF file');
         return;
       }
+      
+      // Check file size (max 50MB)
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error('File size must be less than 50MB');
+        return;
+      }
+      
       setUploadedFile(file);
       setColorizedImageUrl(null);
+      
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPreviewUrl(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+      
       toast.success('Image uploaded successfully!');
     }
   };
@@ -68,18 +85,31 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file) {
-      const validTypes = ['image/png', 'image/jpeg', 'image/tiff'];
+      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/tiff', 'image/tif'];
       if (!validTypes.includes(file.type)) {
         toast.error('Please upload a PNG, JPEG, or TIFF file');
         return;
       }
+      
+      // Check file size (max 50MB)
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error('File size must be less than 50MB');
+        return;
+      }
+      
       setUploadedFile(file);
       setColorizedImageUrl(null);
+      
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPreviewUrl(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+      
       toast.success('Image uploaded successfully!');
     }
   };
-
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   const handleColorize = async () => {
     if (!uploadedFile) {
@@ -89,79 +119,66 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
 
     setIsProcessing(true);
     setProcessingProgress(0);
-    setProcessingStatus('Uploading image...');
+    setProcessingStatus('Preparing image...');
 
     try {
-      // Step 1: Upload image to backend
-      const uploadResult = await uploadImage(uploadedFile);
-      setProcessingProgress(25);
-      setProcessingStatus('Creating processing job...');
-
-      // Step 2: Create processing job
-      const jobResult = await createProcessingJob(uploadResult.id);
-      setCurrentJobId(jobResult.id);
-      setProcessingProgress(50);
+      // Simulate progress stages
+      setProcessingProgress(20);
+      setProcessingStatus('Uploading to server...');
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setProcessingProgress(40);
       setProcessingStatus('Processing with AI model...');
-
-      // Step 3: Poll for job completion
-      const pollJob = async () => {
-        try {
-          const job = await getProcessingJob(jobResult.id);
-          
-          if (job.status === 'completed') {
-            setProcessingProgress(100);
-            setProcessingStatus('Processing complete!');
-            
-            // Set the result image URL if available
-            if (job.result_url) {
-              setColorizedImageUrl(job.result_url);
-            }
-            
-            setIsProcessing(false);
-            toast.success('Image colorization completed successfully!');
-            
-            setTimeout(() => {
-              setProcessingStatus('');
-            }, 2000);
-          } else if (job.status === 'failed') {
-            setIsProcessing(false);
-            toast.error(job.message || 'Processing failed');
-            setProcessingStatus('');
-          } else if (job.status === 'processing') {
-            // Update progress based on job progress if available
-            if (job.progress) {
-              setProcessingProgress(50 + (job.progress * 0.5)); // Scale to 50-100%
-            }
-            setProcessingStatus('AI model processing...');
-            
-            // Continue polling
-            setTimeout(pollJob, 2000);
-          } else {
-            // Job is still pending
-            setProcessingStatus('Waiting in queue...');
-            setTimeout(pollJob, 2000);
-          }
-        } catch (error) {
-          console.error('Error polling job:', error);
-          setTimeout(pollJob, 5000); // Retry after longer delay
-        }
-      };
-
-      // Start polling
-      setTimeout(pollJob, 2000);
-
+      
+      // Call the colorization API
+      const result = await colorizeImage(uploadedFile);
+      
+      setProcessingProgress(80);
+      setProcessingStatus('Generating colorized image...');
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Convert base64 to data URL
+      const imageUrl = `data:image/png;base64,${result.colorized_image}`;
+      setColorizedImageUrl(imageUrl);
+      
+      setProcessingProgress(100);
+      setProcessingStatus('Complete!');
+      
+      toast.success('Image colorization completed successfully!');
+      
+      // Also save to history
+      try {
+        await uploadImage(uploadedFile);
+      } catch (err) {
+        console.error('Failed to save to history:', err);
+      }
+      
+      setTimeout(() => {
+        setIsProcessing(false);
+        setProcessingStatus('');
+      }, 1000);
+      
     } catch (error: any) {
       setIsProcessing(false);
       setProcessingStatus('');
-      toast.error(error.message || 'Failed to start processing');
+      console.error('Colorization error:', error);
+      toast.error(error.message || 'Failed to colorize image');
     }
   };
 
   const handleDownload = (format: 'png' | 'jpeg' | 'tiff') => {
     if (!colorizedImageUrl) return;
     
-    // TODO: Implement actual download from backend
-    toast.error('Download functionality requires backend integration');
+    const link = document.createElement('a');
+    link.href = colorizedImageUrl;
+    link.download = `colorized_${Date.now()}.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success(`Image downloaded as ${format.toUpperCase()}`);
   };
 
   return (
@@ -230,18 +247,25 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <FileImage className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  {uploadedFile ? (
-                    <div>
-                      <p className="text-lg font-medium text-gray-900 dark:text-white">
-                        {uploadedFile.name}
-                      </p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
+                  {previewUrl ? (
+                    <div className="space-y-4">
+                      <img 
+                        src={previewUrl} 
+                        alt="Preview" 
+                        className="max-h-64 mx-auto rounded-lg"
+                      />
+                      <div>
+                        <p className="text-lg font-medium text-gray-900 dark:text-white">
+                          {uploadedFile?.name}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {(uploadedFile!.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
                     </div>
                   ) : (
                     <div>
+                      <FileImage className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                       <p className="text-lg text-gray-600 dark:text-gray-300 mb-2">
                         Drag & drop your image here
                       </p>
@@ -316,19 +340,19 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
                     
                     {/* Processing stages indicator */}
                     <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
-                      <span className={processingProgress >= 20 ? 'text-blue-600 dark:text-blue-400' : ''}>
+                      <span className={processingProgress >= 20 ? 'text-blue-600 dark:text-blue-400 font-medium' : ''}>
                         Upload
                       </span>
-                      <span className={processingProgress >= 40 ? 'text-blue-600 dark:text-blue-400' : ''}>
+                      <span className={processingProgress >= 40 ? 'text-blue-600 dark:text-blue-400 font-medium' : ''}>
                         Preprocess
                       </span>
-                      <span className={processingProgress >= 60 ? 'text-blue-600 dark:text-blue-400' : ''}>
+                      <span className={processingProgress >= 60 ? 'text-blue-600 dark:text-blue-400 font-medium' : ''}>
                         AI Model
                       </span>
-                      <span className={processingProgress >= 85 ? 'text-blue-600 dark:text-blue-400' : ''}>
+                      <span className={processingProgress >= 85 ? 'text-blue-600 dark:text-blue-400 font-medium' : ''}>
                         Colorize
                       </span>
-                      <span className={processingProgress >= 100 ? 'text-green-600 dark:text-green-400' : ''}>
+                      <span className={processingProgress >= 100 ? 'text-green-600 dark:text-green-400 font-medium' : ''}>
                         Complete
                       </span>
                     </div>
@@ -351,12 +375,30 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="rounded-lg overflow-hidden border">
-                      <img
-                        src={colorizedImageUrl}
-                        alt="Colorized SAR Image"
-                        className="w-full h-64 object-cover"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Original Image */}
+                      <div>
+                        <p className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Original</p>
+                        <div className="rounded-lg overflow-hidden border">
+                          <img
+                            src={previewUrl!}
+                            alt="Original SAR Image"
+                            className="w-full h-64 object-contain bg-gray-100 dark:bg-gray-800"
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Colorized Image */}
+                      <div>
+                        <p className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Colorized</p>
+                        <div className="rounded-lg overflow-hidden border">
+                          <img
+                            src={colorizedImageUrl}
+                            alt="Colorized SAR Image"
+                            className="w-full h-64 object-contain bg-gray-100 dark:bg-gray-800"
+                          />
+                        </div>
+                      </div>
                     </div>
                     
                     <div className="flex justify-center space-x-3">
@@ -380,7 +422,7 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
           </div>
         </div>
 
-        {/* Right Sidebar */}
+        {/* Right Sidebar - Help Section */}
         <div className="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6">
           <Collapsible open={isHelpOpen} onOpenChange={setIsHelpOpen}>
             <CollapsibleTrigger asChild>

@@ -1,24 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
+import { Switch } from './ui/switch';
 import { toast } from 'sonner';
 import { 
   ArrowLeft, 
   User, 
   Mail, 
   Calendar, 
-  Download, 
-  FileImage, 
-  Trash2, 
-  LogOut,
-  History,
-  Settings
+  Camera,
+  Save,
+  Loader2,
+  ImageIcon,
+  Clock
 } from 'lucide-react';
+import { getCurrentUser, getSessions, getImages } from '../lib/api';
 
 interface User {
   id: string;
@@ -34,320 +35,432 @@ interface ProfilePageProps {
   onLogout: () => void;
 }
 
-interface UploadHistory {
-  id: string;
-  fileName: string;
-  uploadDate: string;
-  status: 'completed' | 'processing' | 'failed';
-  fileSize: string;
-  downloadUrl?: string;
-}
+export function ProfilePage({ user: initialUser, onNavigateToHome, onLogout }: ProfilePageProps) {
+  const [user, setUser] = useState(initialUser);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [stats, setStats] = useState({
+    imagesProcessed: 0,
+    totalSessions: 0,
+    memberSince: '',
+  });
+  
+  // Form state
+  const [editForm, setEditForm] = useState({
+    fullName: user.fullName,
+    email: user.email,
+    dob: user.dob,
+  });
+  
+  // Settings state
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [autoDelete, setAutoDelete] = useState(false);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-export function ProfilePage({ user, onNavigateToHome, onLogout }: ProfilePageProps) {
-  // Mock upload history data
-  const [uploadHistory] = useState<UploadHistory[]>([
-    {
-      id: '1',
-      fileName: 'sar_image_001.png',
-      uploadDate: '2024-01-15',
-      status: 'completed',
-      fileSize: '2.4 MB',
-      downloadUrl: '#'
-    },
-    {
-      id: '2',
-      fileName: 'satellite_data_v2.tiff',
-      uploadDate: '2024-01-14',
-      status: 'completed',
-      fileSize: '5.7 MB',
-      downloadUrl: '#'
-    },
-    {
-      id: '3',
-      fileName: 'radar_scan_003.jpeg',
-      uploadDate: '2024-01-13',
-      status: 'processing',
-      fileSize: '3.1 MB'
-    },
-    {
-      id: '4',
-      fileName: 'sar_coastal_region.png',
-      uploadDate: '2024-01-12',
-      status: 'failed',
-      fileSize: '4.2 MB'
-    },
-  ]);
+  // Load user stats
+  useEffect(() => {
+    loadUserStats();
+  }, []);
 
-  const handleDownloadReport = () => {
-    toast.success('Generating usage report...');
-    // Simulate report generation
-    setTimeout(() => {
-      toast.success('Report downloaded successfully!');
-    }, 2000);
-  };
-
-  const handleDeleteAccount = () => {
-    toast.success('Account deletion request submitted. You will receive a confirmation email.');
-  };
-
-  const handleDownloadImage = (fileName: string) => {
-    toast.success(`Downloading ${fileName}...`);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'processing':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'failed':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
+  const loadUserStats = async () => {
+    try {
+      setIsLoadingStats(true);
+      
+      // Get current user info
+      const userInfo = await getCurrentUser();
+      
+      // Get sessions
+      const sessions = await getSessions();
+      
+      // Get images
+      const images = await getImages();
+      
+      setStats({
+        imagesProcessed: Array.isArray(images) ? images.length : 0,
+        totalSessions: Array.isArray(sessions) ? sessions.length : 0,
+        memberSince: userInfo.date_joined ? new Date(userInfo.date_joined).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Jan 2024',
+      });
+      
+    } catch (error: any) {
+      console.error('Failed to load user stats:', error);
+      toast.error('Failed to load profile statistics');
+    } finally {
+      setIsLoadingStats(false);
     }
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB');
+      return;
+    }
+
+    try {
+      // Create a data URL for preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const avatarUrl = e.target?.result as string;
+        setUser({ ...user, avatar: avatarUrl });
+        toast.success('Avatar updated successfully!');
+      };
+      reader.readAsDataURL(file);
+
+      // TODO: Upload to backend
+      // const formData = new FormData();
+      // formData.append('avatar', file);
+      // await updateUserAvatar(formData);
+      
+    } catch (error: any) {
+      console.error('Avatar upload error:', error);
+      toast.error('Failed to update avatar');
+    }
+  };
+
+  const handleEditToggle = () => {
+    if (isEditing) {
+      // Cancel editing - reset form
+      setEditForm({
+        fullName: user.fullName,
+        email: user.email,
+        dob: user.dob,
+      });
+    }
+    setIsEditing(!isEditing);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    
+    try {
+      // Validate inputs
+      if (!editForm.fullName.trim()) {
+        toast.error('Full name is required');
+        setIsSaving(false);
+        return;
+      }
+      
+      if (!editForm.email.trim()) {
+        toast.error('Email is required');
+        setIsSaving(false);
+        return;
+      }
+
+      // TODO: Update user in backend
+      // await updateUser({
+      //   first_name: editForm.fullName.split(' ')[0],
+      //   last_name: editForm.fullName.split(' ').slice(1).join(' '),
+      //   email: editForm.email,
+      // });
+
+      // Update local state
+      setUser({
+        ...user,
+        fullName: editForm.fullName,
+        email: editForm.email,
+        dob: editForm.dob,
+      });
+
+      setIsEditing(false);
+      toast.success('Profile updated successfully!');
+      
+    } catch (error: any) {
+      console.error('Save error:', error);
+      toast.error(error.message || 'Failed to update profile');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleInputChange = (field: string, value: string) => {
+    setEditForm({ ...editForm, [field]: value });
   };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                onClick={onNavigateToHome}
-                className="flex items-center space-x-2"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Back to Home</span>
-              </Button>
-              <Separator orientation="vertical" className="h-6" />
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Profile</h1>
-            </div>
-            
-            <Button variant="outline" onClick={onLogout}>
-              <LogOut className="w-4 h-4 mr-2" />
+      {/* Top Navbar */}
+      <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="ghost"
+              onClick={onNavigateToHome}
+              className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Home
+            </Button>
+          </div>
+          
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="ghost"
+              onClick={onLogout}
+              className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+            >
               Logout
             </Button>
           </div>
         </div>
-      </div>
+      </nav>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Profile Overview */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader className="text-center">
-                <Avatar className="w-24 h-24 mx-auto mb-4">
+      <div className="max-w-4xl mx-auto p-6 space-y-6">
+        {/* Profile Header */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col md:flex-row items-center md:items-start space-y-4 md:space-y-0 md:space-x-6">
+              {/* Avatar */}
+              <div className="relative group">
+                <Avatar className="w-32 h-32">
                   <AvatarImage src={user.avatar} alt={user.fullName} />
-                  <AvatarFallback className="text-lg">
+                  <AvatarFallback className="text-3xl">
                     {user.fullName.split(' ').map(n => n[0]).join('')}
                   </AvatarFallback>
                 </Avatar>
-                <CardTitle>{user.fullName}</CardTitle>
-                <CardDescription>{user.email}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-3 text-sm">
-                    <User className="w-4 h-4 text-gray-500" />
-                    <span className="text-gray-600 dark:text-gray-300">Member since</span>
-                    <span className="text-gray-900 dark:text-white font-medium">Jan 2024</span>
-                  </div>
-                  <div className="flex items-center space-x-3 text-sm">
-                    <Calendar className="w-4 h-4 text-gray-500" />
-                    <span className="text-gray-600 dark:text-gray-300">Date of Birth</span>
-                    <span className="text-gray-900 dark:text-white font-medium">
-                      {new Date(user.dob).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-3 text-sm">
-                    <FileImage className="w-4 h-4 text-gray-500" />
-                    <span className="text-gray-600 dark:text-gray-300">Images processed</span>
-                    <Badge variant="secondary">47</Badge>
-                  </div>
+                <button
+                  onClick={handleAvatarClick}
+                  className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                >
+                  <Camera className="w-8 h-8 text-white" />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                />
+              </div>
+
+              {/* User Info */}
+              <div className="flex-1 text-center md:text-left">
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                  {user.fullName}
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  {user.email}
+                </p>
+                
+                <div className="flex flex-wrap gap-4 justify-center md:justify-start">
+                  <Badge variant="secondary" className="flex items-center space-x-1">
+                    <Calendar className="w-3 h-3" />
+                    <span>Member since {isLoadingStats ? '...' : stats.memberSince}</span>
+                  </Badge>
+                  <Badge variant="secondary" className="flex items-center space-x-1">
+                    <ImageIcon className="w-3 h-3" />
+                    <span>{isLoadingStats ? '...' : stats.imagesProcessed} images processed</span>
+                  </Badge>
                 </div>
-                
-                <Separator />
-                
-                <div className="space-y-2">
-                  <Button 
-                    onClick={handleDownloadReport} 
-                    variant="outline" 
-                    className="w-full justify-start"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download Usage Report
+              </div>
+
+              {/* Edit Button */}
+              <div className="flex flex-col space-y-2">
+                {!isEditing ? (
+                  <Button onClick={handleEditToggle} variant="outline">
+                    <User className="w-4 h-4 mr-2" />
+                    Edit Profile
                   </Button>
-                  
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete Account
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This action cannot be undone. This will permanently delete your account and remove all your data from our servers.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteAccount} className="bg-red-600 hover:bg-red-700">
-                          Delete Account
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                ) : (
+                  <>
+                    <Button onClick={handleSave} disabled={isSaving}>
+                      {isSaving ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4 mr-2" />
+                      )}
+                      Save Changes
+                    </Button>
+                    <Button onClick={handleEditToggle} variant="outline">
+                      Cancel
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <ImageIcon className="w-8 h-8 mx-auto mb-2 text-blue-600" />
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {isLoadingStats ? '...' : stats.imagesProcessed}
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Images Processed</p>
+              </div>
+            </CardContent>
+          </Card>
 
-          {/* Main Content */}
-          <div className="lg:col-span-2">
-            <Tabs defaultValue="history" className="space-y-6">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="history" className="flex items-center space-x-2">
-                  <History className="w-4 h-4" />
-                  <span>Upload History</span>
-                </TabsTrigger>
-                <TabsTrigger value="settings" className="flex items-center space-x-2">
-                  <Settings className="w-4 h-4" />
-                  <span>Settings</span>
-                </TabsTrigger>
-              </TabsList>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <Clock className="w-8 h-8 mx-auto mb-2 text-green-600" />
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {isLoadingStats ? '...' : stats.totalSessions}
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Total Sessions</p>
+              </div>
+            </CardContent>
+          </Card>
 
-              <TabsContent value="history" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Upload History</CardTitle>
-                    <CardDescription>
-                      View and manage your processed SAR images
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {uploadHistory.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg"
-                        >
-                          <div className="flex items-center space-x-4">
-                            <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
-                              <FileImage className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            
-                            <div>
-                              <p className="font-medium text-gray-900 dark:text-white">
-                                {item.fileName}
-                              </p>
-                              <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
-                                <span>{item.uploadDate}</span>
-                                <span>{item.fileSize}</span>
-                                <Badge className={getStatusColor(item.status)}>
-                                  {item.status}
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {item.status === 'completed' && item.downloadUrl && (
-                            <Button
-                              onClick={() => handleDownloadImage(item.fileName)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              Download
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="settings" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Account Settings</CardTitle>
-                    <CardDescription>
-                      Manage your account preferences and settings
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="space-y-4">
-                      <h3 className="font-medium text-gray-900 dark:text-white">Personal Information</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Full Name
-                          </label>
-                          <div className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
-                            {user.fullName}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Email Address
-                          </label>
-                          <div className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
-                            {user.email}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-4">
-                      <h3 className="font-medium text-gray-900 dark:text-white">Processing Preferences</h3>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-gray-900 dark:text-white">Email Notifications</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                              Receive email when processing is complete
-                            </p>
-                          </div>
-                          <div className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">
-                            Enabled
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-gray-900 dark:text-white">Auto-delete processed files</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                              Automatically delete files after 30 days
-                            </p>
-                          </div>
-                          <div className="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-2 py-1 rounded text-xs">
-                            Disabled
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-4">
-                      <Button variant="outline" className="w-full">
-                        <Settings className="w-4 h-4 mr-2" />
-                        Update Settings
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <Calendar className="w-8 h-8 mx-auto mb-2 text-purple-600" />
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {isLoadingStats ? '...' : Math.floor((Date.now() - new Date('2024-01-01').getTime()) / (1000 * 60 * 60 * 24))}
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Days Active</p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
+
+        {/* Personal Information */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Personal Information</CardTitle>
+            <CardDescription>
+              {isEditing ? 'Update your personal details' : 'Your account information'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="fullName">Full Name</Label>
+              {isEditing ? (
+                <Input
+                  id="fullName"
+                  value={editForm.fullName}
+                  onChange={(e) => handleInputChange('fullName', e.target.value)}
+                  placeholder="Enter your full name"
+                />
+              ) : (
+                <Input
+                  id="fullName"
+                  value={user.fullName}
+                  disabled
+                  className="bg-gray-50 dark:bg-gray-800"
+                />
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              {isEditing ? (
+                <Input
+                  id="email"
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  placeholder="Enter your email"
+                />
+              ) : (
+                <Input
+                  id="email"
+                  value={user.email}
+                  disabled
+                  className="bg-gray-50 dark:bg-gray-800"
+                />
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dob">Date of Birth</Label>
+              {isEditing ? (
+                <Input
+                  id="dob"
+                  type="date"
+                  value={editForm.dob}
+                  onChange={(e) => handleInputChange('dob', e.target.value)}
+                />
+              ) : (
+                <Input
+                  id="dob"
+                  value={new Date(user.dob).toLocaleDateString()}
+                  disabled
+                  className="bg-gray-50 dark:bg-gray-800"
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Processing Preferences */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Processing Preferences</CardTitle>
+            <CardDescription>
+              Customize your image processing settings
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="email-notifications">Email Notifications</Label>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Receive email when processing is complete
+                </p>
+              </div>
+              <Switch
+                id="email-notifications"
+                checked={emailNotifications}
+                onCheckedChange={setEmailNotifications}
+              />
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="auto-delete">Auto-delete processed files</Label>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Automatically delete files after 30 days
+                </p>
+              </div>
+              <Switch
+                id="auto-delete"
+                checked={autoDelete}
+                onCheckedChange={setAutoDelete}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Danger Zone */}
+        <Card className="border-red-200 dark:border-red-800">
+          <CardHeader>
+            <CardTitle className="text-red-600 dark:text-red-400">Danger Zone</CardTitle>
+            <CardDescription>
+              Irreversible actions for your account
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button variant="destructive" className="w-full md:w-auto">
+              Delete Account
+            </Button>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Once you delete your account, there is no going back. Please be certain.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
