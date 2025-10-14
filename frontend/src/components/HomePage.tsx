@@ -151,6 +151,7 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
       // Also save to history
       try {
         await uploadImage(uploadedFile);
+        console.log('Image saved to history');
       } catch (err) {
         console.error('Failed to save to history:', err);
       }
@@ -171,12 +172,32 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
   const handleDownload = (format: 'png' | 'jpeg' | 'tiff') => {
     if (!colorizedImageUrl) return;
     
+    // Convert base64 to blob
+    const base64Data = colorizedImageUrl.split(',')[1];
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    
+    const byteArray = new Uint8Array(byteNumbers);
+    
+    // Create blob with correct MIME type
+    let mimeType = 'image/png';
+    if (format === 'jpeg') mimeType = 'image/jpeg';
+    if (format === 'tiff') mimeType = 'image/tiff';
+    
+    const blob = new Blob([byteArray], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    
     const link = document.createElement('a');
-    link.href = colorizedImageUrl;
+    link.href = url;
     link.download = `colorized_${Date.now()}.${format}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     
     toast.success(`Image downloaded as ${format.toUpperCase()}`);
   };
@@ -208,10 +229,15 @@ export function HomePage({ user, onNavigateToProfile, onLogout }: HomePageProps)
               className="flex items-center space-x-2"
             >
               <Avatar className="w-8 h-8">
-                <AvatarImage src={user.avatar} alt={user.fullName} />
-                <AvatarFallback>{user.fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                <AvatarImage 
+                  src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=random`} 
+                  alt={user.fullName} 
+                />
+                <AvatarFallback className="bg-blue-600 text-white">
+                  {user.fullName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                </AvatarFallback>
               </Avatar>
-              <User className="w-4 h-4" />
+              <span className="text-sm font-medium">{user.fullName}</span>
             </Button>
           </div>
         </div>

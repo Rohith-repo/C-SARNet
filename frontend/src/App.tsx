@@ -48,31 +48,31 @@ export default function App() {
 
   // Check for existing session on app load
   useEffect(() => {
-    const checkExistingSession = async () => {
-      const token = getToken();
-      if (token) {
-        try {
-          const currentUser = await getCurrentUser();
-          const userData = {
-            id: currentUser.id,
-            fullName: `${currentUser.first_name} ${currentUser.last_name}`.trim(),
-            email: currentUser.email,
-            dob: '1990-01-01', // Default since we don't have DOB from backend
-            avatar: ''
-          };
-          setUser(userData);
-          setCurrentPage('home');
-        } catch (error) {
-          console.error('Session check failed:', error);
-          // Token is invalid, stay on login page
-        }
+  const checkExistingSession = async () => {
+    const token = getToken();
+    if (token) {
+      try {
+        const currentUser = await getCurrentUser();
+        const userData = {
+          id: currentUser.id,
+          fullName: `${currentUser.first_name} ${currentUser.last_name}`.trim(),
+          email: currentUser.email,
+          dob: currentUser.date_of_birth || '1990-01-01',
+          avatar: currentUser.avatar || ''
+        };
+        setUser(userData);
+        setCurrentPage('home');
+      } catch (error) {
+        console.error('Session check failed:', error);
+        // Clear invalid token
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
       }
-      setIsInitializing(false);
-    };
-
-    checkExistingSession();
-  }, []);
-
+    }
+    setIsInitializing(false);
+  };
+  checkExistingSession();
+}, []);
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
   };
@@ -87,9 +87,24 @@ export default function App() {
     }
   };
 
-  const handleLogin = (userData: User) => {
+  const handleLogin = async (userData: User) => {
     setUser(userData);
     setCurrentPage('home');
+    
+    // Refresh user data from backend
+    try {
+      const currentUser = await getCurrentUser();
+      const fullUserData = {
+        id: currentUser.id,
+        fullName: `${currentUser.first_name} ${currentUser.last_name}`.trim(),
+        email: currentUser.email,
+        dob: userData.dob || '1990-01-01',
+        avatar: userData.avatar || ''
+      };
+      setUser(fullUserData);
+    } catch (error) {
+      console.error('Failed to refresh user data:', error);
+    }
   };
 
   const handleLogout = async () => {
@@ -178,7 +193,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Fixed Controls */}
-      <div className="fixed top-4 right-4 z-50 flex space-x-2">
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
         {/* Admin Access Button - only show on login page */}
         {currentPage === 'login' && (
           <Button
@@ -206,7 +221,6 @@ export default function App() {
           )}
         </Button>
       </div>
-
       {/* API Test Button - Bottom Left */}
       <div className="fixed bottom-4 left-4 z-50">
         <Button

@@ -17,6 +17,7 @@ router = DefaultRouter()
 router.register(r'users', CustomUserViewSet)
 router.register(r'user-credentials', UserCredentialsViewSet, basename='usercredentials')
 router.register(r'user-settings', UserSettingsViewSet, basename='usersettings')
+router.register(r'users', CustomUserViewSet, basename='user')
 router.register(r'sessions', SessionsViewSet, basename='sessions')
 router.register(r'images', ImagesViewSet, basename='images')
 router.register(r'notifications', NotificationsViewSet, basename='notifications')
@@ -42,4 +43,5 @@ urlpatterns = [
     
     # API endpoints
     path('', include(router.urls)),
+    
 ]

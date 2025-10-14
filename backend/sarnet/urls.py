@@ -23,7 +23,7 @@ urlpatterns = [
 
     # core app
     path("api/", include("core.urls")),
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Serve media/static files during development
 if settings.DEBUG:

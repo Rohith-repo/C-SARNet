@@ -20,83 +20,76 @@ from .serializers import (
     JobResultsSerializer, ViaEventsSerializer, ProcessingOutputsSerializer,
     SourceDownloadsSerializer
 )
-
+from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from .models import CustomUser
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.core.files.base import ContentFile
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.conf import settings
+import os
 
 
 User = get_user_model()
-
-
 class CustomUserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserSerializer
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
-    def get_permissions(self):
-        if self.action == 'create':
-            permission_classes = [AllowAny]
-        else:
-            permission_classes = [IsAuthenticated]
-        return [permission() for permission in permission_classes]
-
-    def get_queryset(self):
-        if self.request.user.is_superuser:
-            return CustomUser.objects.all()
-        return CustomUser.objects.filter(id=self.request.user.id)
-
-    @action(detail=False, methods=['get', 'put', 'patch'])
+    @action(detail=False, methods=['get', 'patch'], url_path='me')
     def me(self, request):
-        """Get or update current user profile"""
-        if request.method == 'GET':
-            serializer = self.get_serializer(request.user)
+        user = request.user
+        if request.method == 'PATCH':
+            serializer = CustomUserSerializer(user, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
             return Response(serializer.data)
-        
-        serializer = self.get_serializer(request.user, data=request.data, partial=True)
+        serializer = CustomUserSerializer(user)
+        return Response(serializer.data)
+
+
+    @action(detail=False, methods=['patch', 'put'])
+    def update_profile(self, request):
+        """Update current user profile (partial allowed)"""
+        serializer = self.get_serializer(request.user, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['post'])
-    def avatar(self, request):
-        """Upload user avatar"""
+    @action(detail=False, methods=['post'], url_path='avatar', parser_classes=[MultiPartParser, FormParser])
+    def upload_avatar(self, request):
+        """
+        Upload or replace avatar. Expects multipart/form-data with key 'avatar'.
+        Returns serialized user (so frontend gets avatar URL).
+        """
         if 'avatar' not in request.FILES:
             return Response({'error': 'No avatar file provided'}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         user = request.user
         avatar_file = request.FILES['avatar']
-        
-        # Handle file upload (you might want to use a service like S3 in production)
-        from django.core.files.storage import default_storage
-        from django.conf import settings
-        import os
-        
-        # Save to MEDIA_ROOT/avatars/<user_id>_<filename>
+        # Build filename: avatars/<user_id>_<original_name>
         filename = f"avatars/{user.id}_{avatar_file.name}"
-        if hasattr(user, 'avatar') and user.avatar:
-            # Delete old avatar if exists
-            try:
-                default_storage.delete(user.avatar.path)
-            except Exception:
-                pass
-        
-        # Save new avatar
-        saved_path = default_storage.save(filename, avatar_file)
-        avatar_url = os.path.join(settings.MEDIA_URL.strip('/'), saved_path)
-        
-        # Update user model
-        user.avatar = saved_path
-        user.save()
-        
-        return Response({'avatar_url': avatar_url})
 
-    @action(detail=False, methods=['put', 'patch'])
-    def update_profile(self, request):
-        """Update current user profile"""
-        serializer = self.get_serializer(request.user, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # delete old avatar file if it exists (safe attempt)
+        try:
+            if user.avatar:
+                # default_storage.delete can accept the field value
+                user.avatar.delete(save=False)
+        except Exception:
+            pass
+
+        # Save new file into the ImageField properly
+        user.avatar.save(filename, avatar_file, save=True)
+
+        # Serialize and return the user so frontend gets new avatar URL (serializer should expose avatar.url)
+        serializer = self.get_serializer(user, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class UserCredentialsViewSet(viewsets.ModelViewSet):
@@ -155,16 +148,17 @@ class SessionsViewSet(viewsets.ModelViewSet):
         return Response({'status': 'cleared', 'deleted': deleted})
 
 
+from django.core.files.storage import default_storage
+from django.conf import settings
+import os
+
 class ImagesViewSet(viewsets.ModelViewSet):
+    queryset = Images.objects.all()
     serializer_class = ImagesSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
-    def get_queryset(self):
-        return Images.objects.filter(session__user=self.request.user)
-
     def create(self, request, *args, **kwargs):
-        """Support frontend uploadImage(file) which sends multipart/form-data to /api/images/"""
         file_obj = request.FILES.get('image')
         storage_path = request.data.get('storage_path')
         session_id = request.data.get('session_id')
@@ -173,15 +167,12 @@ class ImagesViewSet(viewsets.ModelViewSet):
         if not file_obj and not storage_path:
             return Response({'detail': 'Provide image file or storage_path'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Here we only track the path. If file provided, store it under MEDIA_ROOT and set storage_path accordingly
         if file_obj and not storage_path:
-            # Save to MEDIA_ROOT/uploads/<uuid>_<name>
-            from django.core.files.storage import default_storage
-            from django.conf import settings
-            import os
+            # Save file and set storage_path to relative path (ImageField uses storage)
             fname = f"uploads/{image_id}_{file_obj.name}"
-            saved_path = default_storage.save(fname, file_obj)
-            storage_path = os.path.join(settings.MEDIA_URL.strip('/'), saved_path)
+            saved_path = default_storage.save(fname, file_obj)  # returns relative path
+            # Provide URL for frontend
+            storage_path = request.build_absolute_uri(settings.MEDIA_URL + saved_path)
 
         # Find or create session
         if session_id:
@@ -193,7 +184,7 @@ class ImagesViewSet(viewsets.ModelViewSet):
             session = Sessions.objects.create(
                 user=request.user,
                 session_id=str(uuid.uuid4()),
-                username=request.user.get_username() or request.user.email or request.user.username,
+                username=(request.user.get_username() or request.user.email or request.user.username),
                 text='Image uploaded',
                 type='image',
                 date=timezone.now(),
@@ -202,6 +193,7 @@ class ImagesViewSet(viewsets.ModelViewSet):
                 user_status_date=timezone.now(),
             )
 
+        # Create image entry
         Images.objects.create(
             session=session,
             user_id=str(request.user.id),
@@ -209,13 +201,17 @@ class ImagesViewSet(viewsets.ModelViewSet):
             storage_path=storage_path,
         )
 
+        # IMPORTANT: increment session.total_cnt and save
+        session.total_cnt = (session.total_cnt or 0) + 1
+        session.save()
+
         serializer = SessionsSerializer(session, context={'request': request})
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(detail=False, methods=['post'])
     def upload(self, request):
-        """Upload an image and ensure it's tracked in history (sessions) [JSON payload variant]"""
+        # similar to create above but using JSON payload (storage_path required)
         image_id = request.data.get('image_id') or str(uuid.uuid4())
         storage_path = request.data.get('storage_path')
         session_id = request.data.get('session_id')
@@ -223,8 +219,6 @@ class ImagesViewSet(viewsets.ModelViewSet):
         if not storage_path:
             return Response({'error': 'storage_path is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Find or create session
-        session = None
         if session_id:
             try:
                 session = Sessions.objects.get(user=request.user, session_id=session_id)
@@ -234,7 +228,7 @@ class ImagesViewSet(viewsets.ModelViewSet):
             session = Sessions.objects.create(
                 user=request.user,
                 session_id=str(uuid.uuid4()),
-                username=request.user.get_username() or request.user.email or request.user.username,
+                username=(request.user.get_username() or request.user.email or request.user.username),
                 text='Image uploaded',
                 type='image',
                 date=timezone.now(),
@@ -250,9 +244,11 @@ class ImagesViewSet(viewsets.ModelViewSet):
             storage_path=storage_path,
         )
 
+        session.total_cnt = (session.total_cnt or 0) + 1
+        session.save()
+
         serializer = SessionsSerializer(session, context={'request': request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
 
 class NotificationsViewSet(viewsets.ModelViewSet):
     serializer_class = NotificationsSerializer

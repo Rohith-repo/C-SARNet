@@ -239,28 +239,37 @@ export async function logout(): Promise<void> {
   clearTokens();
 }
 
+// Update getCurrentUser to return avatar URL
 export async function getCurrentUser(): Promise<User> {
-  // Try our own users/me endpoint first
   let response = await apiRequest('/users/me/');
   if (response.ok) {
-    return response.json();
-  }
-
-  // Fallback: dj-rest-auth user info endpoint
-  const fallback = await apiRequest('/auth/user/');
-  if (fallback.ok) {
-    const data = await fallback.json();
-    // Map dj-rest-auth fields to our User interface if needed
+    const data = await response.json();
     return {
       id: String(data.id || data.pk),
       email: data.email,
       first_name: data.first_name || '',
       last_name: data.last_name || '',
       date_joined: data.date_joined || new Date().toISOString(),
+      date_of_birth: data.date_of_birth || null,
+      avatar: data.avatar ? `${API_URL.replace('/api', '')}${data.avatar}` : null, // ✅ Full URL
     } as User;
   }
 
-  // Build better error message
+  // Fallback...
+  const fallback = await apiRequest('/auth/user/');
+  if (fallback.ok) {
+    const data = await fallback.json();
+    return {
+      id: String(data.id || data.pk),
+      email: data.email,
+      first_name: data.first_name || '',
+      last_name: data.last_name || '',
+      date_joined: data.date_joined || new Date().toISOString(),
+      date_of_birth: data.date_of_birth || null,
+      avatar: data.avatar ? `${API_URL.replace('/api', '')}${data.avatar}` : null,
+    } as User;
+  }
+
   let detail = `${response.status} ${response.statusText}`;
   try {
     const body = await response.json();
@@ -268,6 +277,19 @@ export async function getCurrentUser(): Promise<User> {
   } catch {}
   throw new Error(`Failed to get user info: ${detail}`);
 }
+
+// Update User interface
+export interface User {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  date_joined: string;
+  date_of_birth?: string | null;
+  avatar?: string | null;
+}
+
+
 
 // File upload for image processing
 export async function uploadImage(file: File): Promise<any> {
@@ -367,3 +389,79 @@ export async function getImages(): Promise<any> {
   return response.json();
 }
 
+// Add these functions to your existing src/lib/api.ts
+
+// Update user profile
+export async function updateUser(data: {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  date_of_birth?: string;
+}): Promise<any> {
+  const response = await apiRequest('/users/me/', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update profile');
+  }
+
+  return response.json();
+}
+
+// Update user avatar
+export async function updateUserAvatar(formData: FormData): Promise<any> {
+  const token = getToken();
+  const response = await fetch(`${API_URL.replace(/\/$/, '')}/users/avatar/`, {
+    method: 'POST',
+    headers: {
+      ...(token && { 'Authorization': `Bearer ${token}` }),
+    },
+    body: formData,
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update avatar');
+  }
+
+  return response.json();
+}
+
+// Get user statistics
+export async function getUserStats(): Promise<{
+  imagesProcessed: number;
+  totalSessions: number;
+  memberSince: string;
+}> {
+  try {
+    const [userInfo, sessions, images] = await Promise.all([
+      getCurrentUser(),
+      getSessions(),
+      getImages(),
+    ]);
+
+    return {
+      imagesProcessed: Array.isArray(images) ? images.length : 0,
+      totalSessions: Array.isArray(sessions) ? sessions.length : 0,
+      memberSince: userInfo.date_joined || new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error('Failed to get user stats:', error);
+    return {
+      imagesProcessed: 0,
+      totalSessions: 0,
+      memberSince: new Date().toISOString(),
+    };
+  }
+}
+
+// api.ts
+export async function getUserById(userId: number) {
+  const res = await fetch(`/api/users/${userId}/`);
+  if (!res.ok) throw new Error('Failed to fetch user');
+  return res.json(); // should return user info including avatar
+}

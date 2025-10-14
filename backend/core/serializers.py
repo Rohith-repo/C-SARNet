@@ -9,35 +9,6 @@ from .models import (
 User = get_user_model()
 
 
-class CustomUserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
-    
-    class Meta:
-        model = CustomUser
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_of_birth',
-                 'is_verified', 'password', 'created_at', 'updated_at']
-        extra_kwargs = {
-            'password': {'write_only': True},
-            'created_at': {'read_only': True},
-            'updated_at': {'read_only': True},
-        }
-
-    def create(self, validated_data):
-        password = validated_data.pop('password')
-        user = CustomUser.objects.create_user(**validated_data)
-        user.set_password(password)
-        user.save()
-        return user
-
-    def update(self, instance, validated_data):
-        password = validated_data.pop('password', None)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        if password:
-            instance.set_password(password)
-        instance.save()
-        return instance
-
 
 class UserCredentialsSerializer(serializers.ModelSerializer):
     class Meta:
@@ -245,3 +216,36 @@ class CustomRegisterSerializer(RegisterSerializer):
             user.date_of_birth = dob
         user.save()
         return user
+
+class CustomUserSerializer(serializers.ModelSerializer):
+    avatar = serializers.ImageField(required=False)
+    processing_jobs = ProcessingJobsSerializer(many=True, read_only=True)
+    images = ImagesSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CustomUser
+        fields = [
+            'id', 'email', 'first_name', 'last_name', 'date_of_birth',
+            'avatar', 'date_joined', 'is_active', 'password',
+            'processing_jobs', 'images'
+        ]
+        read_only_fields = ['id', 'date_joined']
+        extra_kwargs = {'password': {'write_only': True}}
+
+
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        user = CustomUser.objects.create_user(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save() 
+        return instance
+

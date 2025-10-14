@@ -1,27 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Alert, AlertDescription } from './ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { ScrollArea } from './ui/scroll-area';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from './ui/dialog';
 import { toast } from 'sonner';
-import { 
-  Shield, 
-  Users, 
-  Image, 
-  Activity, 
-  Ban, 
-  UserCheck, 
-  Download,
-  Clock,
+import {
+  Users,
+  Image as ImageIcon,
+  Activity,
   LogOut,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  MoreHorizontal
+  Search,
+  Trash2,
+  Edit,
+  UserCog,
+  Shield,
+  Calendar,
+  TrendingUp,
+  Loader2
 } from 'lucide-react';
+import { getUserStats, getSessions, getImages } from '../lib/api';
 
 interface Admin {
   id: string;
@@ -37,349 +52,425 @@ interface AdminDashboardProps {
   onLogout: () => void;
 }
 
-// Mock data for demonstration
-const mockUsers = [
-  { id: '1', name: 'John Doe', email: 'john@example.com', status: 'active', joinDate: '2024-01-15', uploads: 12 },
-  { id: '2', name: 'Jane Smith', email: 'jane@example.com', status: 'active', joinDate: '2024-01-20', uploads: 8 },
-  { id: '3', name: 'Bob Wilson', email: 'bob@example.com', status: 'banned', joinDate: '2024-02-01', uploads: 3 },
-  { id: '4', name: 'Alice Brown', email: 'alice@example.com', status: 'active', joinDate: '2024-02-10', uploads: 15 },
-  { id: '5', name: 'Charlie Green', email: 'charlie@example.com', status: 'inactive', joinDate: '2024-02-15', uploads: 1 }
-];
+interface User {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  date_joined: string;
+  is_active: boolean;
+}
 
-const mockProcessingLogs = [
-  { id: '1', user: 'John Doe', filename: 'sar_image_001.png', status: 'completed', timestamp: '2024-12-20 14:30:25', processingTime: '2.5s' },
-  { id: '2', user: 'Jane Smith', filename: 'radar_data_042.tiff', status: 'processing', timestamp: '2024-12-20 14:28:15', processingTime: '45s' },
-  { id: '3', user: 'Alice Brown', filename: 'satellite_img.jpg', status: 'failed', timestamp: '2024-12-20 14:25:10', processingTime: '1.2s' },
-  { id: '4', user: 'John Doe', filename: 'sar_coastal.png', status: 'completed', timestamp: '2024-12-20 14:20:45', processingTime: '3.1s' },
-  { id: '5', user: 'Bob Wilson', filename: 'urban_sar.tiff', status: 'completed', timestamp: '2024-12-20 14:15:20', processingTime: '2.8s' }
-];
+interface SystemStats {
+  totalUsers: number;
+  totalImages: number;
+  totalSessions: number;
+  activeToday: number;
+}
 
 export function AdminDashboard({ admin, onLogout }: AdminDashboardProps) {
-  const [users, setUsers] = useState(mockUsers);
-  const [processingLogs] = useState(mockProcessingLogs);
+  const [users, setUsers] = useState<User[]>([]);
+  const [stats, setStats] = useState<SystemStats>({
+    totalUsers: 0,
+    totalImages: 0,
+    totalSessions: 0,
+    activeToday: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
-  const handleUserStatusChange = (userId: string, newStatus: 'active' | 'banned' | 'inactive') => {
-    setUsers(users.map(user => 
-      user.id === userId ? { ...user, status: newStatus } : user
-    ));
+  useEffect(() => {
+    loadAdminData();
+  }, []);
+
+  const loadAdminData = async () => {
+  try {
+    setIsLoading(true);
+
+    // Try to get sessions and images, but handle errors gracefully
+    let sessions: any[] = [];
+    let images: any[] = [];
+
+    try {
+      sessions = await getSessions();
+      if (!Array.isArray(sessions)) sessions = [];
+    } catch (error) {
+      console.error('Failed to load sessions:', error);
+      toast.warning('Could not load sessions data');
+    }
+
+    try {
+      images = await getImages();
+      if (!Array.isArray(images)) images = [];
+    } catch (error) {
+      console.error('Failed to load images:', error);
+      toast.warning('Could not load images data');
+    }
+
+    // Extract unique users from sessions
+    const uniqueUsers = new Map<string, User>();
     
-    const action = newStatus === 'banned' ? 'banned' : 
-                  newStatus === 'active' ? 'activated' : 'deactivated';
-    toast.success(`User ${action} successfully`);
-  };
+    sessions.forEach((session: any) => {
+      if (session.user && !uniqueUsers.has(session.user.id || session.user_id)) {
+        const userId = session.user.id || session.user_id || String(Math.random());
+        uniqueUsers.set(userId, {
+          id: userId,
+          email: session.user.email || session.username || 'N/A',
+          first_name: session.user.first_name || session.username?.split('@')[0] || 'User',
+          last_name: session.user.last_name || '',
+          date_joined: session.date || session.created_at || new Date().toISOString(),
+          is_active: session.user_status === 'active' || session.is_active !== false,
+        });
+      }
+    });
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Active</Badge>;
-      case 'banned':
-        return <Badge variant="destructive">Banned</Badge>;
-      case 'inactive':
-        return <Badge variant="outline">Inactive</Badge>;
-      case 'completed':
-        return <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Completed</Badge>;
-      case 'processing':
-        return <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Processing</Badge>;
-      case 'failed':
-        return <Badge variant="destructive">Failed</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+    const usersArray = Array.from(uniqueUsers.values());
+    setUsers(usersArray);
+
+    // Calculate active today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const activeTodayCount = sessions.filter((s: any) => {
+      const sessionDate = new Date(s.date || s.created_at);
+      return sessionDate >= today;
+    }).length;
+
+    setStats({
+      totalUsers: usersArray.length,
+      totalImages: images.length,
+      totalSessions: sessions.length,
+      activeToday: activeTodayCount,
+    });
+
+  } catch (error) {
+    console.error('Failed to load admin data:', error);
+    toast.error('Failed to load admin dashboard data');
+    
+    // Set empty data so UI doesn't break
+    setUsers([]);
+    setStats({
+      totalUsers: 0,
+      totalImages: 0,
+      totalSessions: 0,
+      activeToday: 0,
+    });
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      // TODO: Implement delete user API
+      setUsers(users.filter(u => u.id !== userId));
+      toast.success('User deleted successfully');
+      loadAdminData(); // Reload stats
+    } catch (error) {
+      toast.error('Failed to delete user');
     }
   };
 
-  const activeUsers = users.filter(user => user.status === 'active').length;
-  const bannedUsers = users.filter(user => user.status === 'banned').length;
-  const totalUploads = users.reduce((sum, user) => sum + user.uploads, 0);
-  const completedProcessing = processingLogs.filter(log => log.status === 'completed').length;
+  const handleToggleUserStatus = async (userId: string) => {
+    try {
+      // TODO: Implement toggle user status API
+      setUsers(users.map(u => 
+        u.id === userId ? { ...u, is_active: !u.is_active } : u
+      ));
+      toast.success('User status updated');
+    } catch (error) {
+      toast.error('Failed to update user status');
+    }
+  };
+
+  const filteredUsers = users.filter(user =>
+    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.last_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Top Navbar */}
-      <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Shield className="w-8 h-8 text-red-600 dark:text-red-400" />
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">C-SARNet Admin</h1>
-            <Badge variant="outline" className="border-red-200 text-red-700 dark:border-red-800 dark:text-red-300">
-              Administrator Panel
-            </Badge>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-300">
-              <Avatar className="w-8 h-8">
-                <AvatarImage src={admin.avatar} alt={admin.fullName} />
-                <AvatarFallback>{admin.fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-              </Avatar>
-              <span>{admin.fullName}</span>
+      {/* Admin Navbar */}
+      <nav className="bg-gradient-to-r from-red-600 to-red-700 dark:from-red-800 dark:to-red-900 shadow-lg">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <Shield className="w-8 h-8 text-white" />
+              <div>
+                <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
+                <p className="text-red-100 text-sm">System Management Panel</p>
+              </div>
             </div>
-            <Button
-              variant="ghost"
-              onClick={onLogout}
-              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Logout
-            </Button>
+            
+            <div className="flex items-center space-x-4">
+              <div className="text-right mr-4">
+                <p className="text-white font-medium">{admin.fullName || admin.username}</p>
+                <p className="text-red-100 text-sm">{admin.role || 'Administrator'}</p>
+              </div>
+              <Avatar className="w-10 h-10 ring-2 ring-white">
+                <AvatarImage src={admin.avatar} alt={admin.fullName} />
+                <AvatarFallback className="bg-red-800 text-white">
+                  {admin.username?.[0]?.toUpperCase() || 'A'}
+                </AvatarFallback>
+              </Avatar>
+              <Button
+                variant="ghost"
+                onClick={onLogout}
+                className="text-white hover:bg-red-700"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
       </nav>
 
-      <div className="p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center space-x-2">
-                  <Users className="w-5 h-5 text-blue-600" />
-                  <div>
-                    <p className="text-2xl font-bold">{activeUsers}</p>
-                    <p className="text-sm text-muted-foreground">Active Users</p>
-                  </div>
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-blue-100 text-sm font-medium">Total Users</p>
+                  <h3 className="text-3xl font-bold mt-2">
+                    {isLoading ? '...' : stats.totalUsers}
+                  </h3>
                 </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center space-x-2">
-                  <Ban className="w-5 h-5 text-red-600" />
-                  <div>
-                    <p className="text-2xl font-bold">{bannedUsers}</p>
-                    <p className="text-sm text-muted-foreground">Banned Users</p>
-                  </div>
+                <Users className="w-12 h-12 text-blue-200 opacity-80" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-green-100 text-sm font-medium">Total Images</p>
+                  <h3 className="text-3xl font-bold mt-2">
+                    {isLoading ? '...' : stats.totalImages}
+                  </h3>
                 </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center space-x-2">
-                  <Image className="w-5 h-5 text-green-600" />
-                  <div>
-                    <p className="text-2xl font-bold">{totalUploads}</p>
-                    <p className="text-sm text-muted-foreground">Total Uploads</p>
-                  </div>
+                <ImageIcon className="w-12 h-12 text-green-200 opacity-80" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-purple-100 text-sm font-medium">Total Sessions</p>
+                  <h3 className="text-3xl font-bold mt-2">
+                    {isLoading ? '...' : stats.totalSessions}
+                  </h3>
                 </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center space-x-2">
-                  <Activity className="w-5 h-5 text-purple-600" />
-                  <div>
-                    <p className="text-2xl font-bold">{completedProcessing}</p>
-                    <p className="text-sm text-muted-foreground">Processed Images</p>
-                  </div>
+                <Activity className="w-12 h-12 text-purple-200 opacity-80" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-orange-100 text-sm font-medium">Active Today</p>
+                  <h3 className="text-3xl font-bold mt-2">
+                    {isLoading ? '...' : stats.activeToday}
+                  </h3>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Main Content Tabs */}
-          <Tabs defaultValue="users" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="users">User Management</TabsTrigger>
-              <TabsTrigger value="images">Image Processing</TabsTrigger>
-              <TabsTrigger value="logs">System Logs</TabsTrigger>
-            </TabsList>
-
-            {/* Users Tab */}
-            <TabsContent value="users" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Users className="w-5 h-5" />
-                    <span>User Management</span>
-                  </CardTitle>
-                  <CardDescription>
-                    Manage user accounts, view activity, and control access permissions
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>User</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Join Date</TableHead>
-                        <TableHead>Uploads</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {users.map((user) => (
-                        <TableRow key={user.id}>
-                          <TableCell className="font-medium">
-                            <div>
-                              <p>{user.name}</p>
-                              <p className="text-sm text-muted-foreground">{user.email}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>{getStatusBadge(user.status)}</TableCell>
-                          <TableCell>{user.joinDate}</TableCell>
-                          <TableCell>{user.uploads}</TableCell>
-                          <TableCell>
-                            <div className="flex space-x-2">
-                              {user.status !== 'active' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleUserStatusChange(user.id, 'active')}
-                                  className="text-green-600 hover:text-green-700"
-                                >
-                                  <UserCheck className="w-4 h-4" />
-                                </Button>
-                              )}
-                              {user.status !== 'banned' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleUserStatusChange(user.id, 'banned')}
-                                  className="text-red-600 hover:text-red-700"
-                                >
-                                  <Ban className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Images Tab */}
-            <TabsContent value="images" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Image className="w-5 h-5" />
-                    <span>Image Processing Monitor</span>
-                  </CardTitle>
-                  <CardDescription>
-                    Monitor image uploads and processing status
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>User</TableHead>
-                        <TableHead>Filename</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Processing Time</TableHead>
-                        <TableHead>Timestamp</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {processingLogs.map((log) => (
-                        <TableRow key={log.id}>
-                          <TableCell className="font-medium">{log.user}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center space-x-2">
-                              <Image className="w-4 h-4 text-gray-400" />
-                              <span>{log.filename}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{getStatusBadge(log.status)}</TableCell>
-                          <TableCell>{log.processingTime}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center space-x-2">
-                              <Clock className="w-4 h-4 text-gray-400" />
-                              <span className="text-sm">{log.timestamp}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {log.status === 'completed' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => toast.success('Download started')}
-                              >
-                                <Download className="w-4 h-4" />
-                              </Button>
-                            )}
-                            {log.status === 'failed' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => toast.info('Retry processing initiated')}
-                                className="text-orange-600"
-                              >
-                                <AlertTriangle className="w-4 h-4" />
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Logs Tab */}
-            <TabsContent value="logs" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Activity className="w-5 h-5" />
-                    <span>System Activity Logs</span>
-                  </CardTitle>
-                  <CardDescription>
-                    Monitor system performance and user activities
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Alert className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-                    <CheckCircle className="h-4 w-4 text-blue-600" />
-                    <AlertDescription className="text-blue-800 dark:text-blue-200">
-                      System Status: All services running normally
-                    </AlertDescription>
-                  </Alert>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md">
-                      <div className="flex items-center space-x-3">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                        <div>
-                          <p className="text-sm font-medium text-green-800 dark:text-green-200">Image processing completed</p>
-                          <p className="text-xs text-green-600 dark:text-green-400">User: john@example.com | 2 minutes ago</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md">
-                      <div className="flex items-center space-x-3">
-                        <Activity className="w-5 h-5 text-blue-600" />
-                        <div>
-                          <p className="text-sm font-medium text-blue-800 dark:text-blue-200">New user registration</p>
-                          <p className="text-xs text-blue-600 dark:text-blue-400">User: alice@example.com | 15 minutes ago</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-md">
-                      <div className="flex items-center space-x-3">
-                        <XCircle className="w-5 h-5 text-red-600" />
-                        <div>
-                          <p className="text-sm font-medium text-red-800 dark:text-red-200">Processing failed - invalid file format</p>
-                          <p className="text-xs text-red-600 dark:text-red-400">User: bob@example.com | 1 hour ago</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                <TrendingUp className="w-12 h-12 text-orange-200 opacity-80" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
+
+        {/* User Management */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <UserCog className="w-5 h-5" />
+                  User Management
+                </CardTitle>
+                <CardDescription>
+                  Manage and monitor all registered users
+                </CardDescription>
+              </div>
+              <Button 
+                onClick={loadAdminData}
+                variant="outline"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  'Refresh'
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* Search Bar */}
+            <div className="mb-6">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search users by name or email..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            {/* Users Table */}
+            {isLoading ? (
+              <div className="text-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto text-gray-400" />
+                <p className="text-sm text-gray-500 mt-2">Loading users...</p>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="text-center py-12">
+                <Users className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400">
+                  {searchQuery ? 'No users found matching your search' : 'No users registered yet'}
+                </p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[500px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Joined</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredUsers.map((user) => (
+                      <TableRow key={user.id}>
+                        <TableCell>
+                          <div className="flex items-center space-x-3">
+                            <Avatar className="w-8 h-8">
+                              <AvatarImage 
+                                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(`${user.first_name} ${user.last_name}`)}&background=random`}
+                                alt={user.first_name}
+                              />
+                              <AvatarFallback>
+                                {user.first_name[0]}{user.last_name[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">
+                                {user.first_name} {user.last_name}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-gray-600 dark:text-gray-400">
+                          {user.email}
+                        </TableCell>
+                        <TableCell className="text-gray-600 dark:text-gray-400">
+                          {new Date(user.date_joined).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={user.is_active ? 'default' : 'secondary'}
+                            className={user.is_active ? 'bg-green-500' : 'bg-gray-500'}
+                          >
+                            {user.is_active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleToggleUserStatus(user.id)}
+                              title={user.is_active ? 'Deactivate user' : 'Activate user'}
+                            >
+                              <UserCog className="w-4 h-4" />
+                            </Button>
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setSelectedUser(user)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>User Details</DialogTitle>
+                                  <DialogDescription>
+                                    View and manage user information
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4 py-4">
+                                  <div>
+                                    <Label className="text-sm font-medium">Full Name</Label>
+                                    <p className="text-gray-900 dark:text-white mt-1">
+                                      {user.first_name} {user.last_name}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <Label className="text-sm font-medium">Email</Label>
+                                    <p className="text-gray-900 dark:text-white mt-1">{user.email}</p>
+                                  </div>
+                                  <div>
+                                    <Label className="text-sm font-medium">User ID</Label>
+                                    <p className="text-gray-900 dark:text-white mt-1 font-mono text-sm">
+                                      {user.id}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <Label className="text-sm font-medium">Member Since</Label>
+                                    <p className="text-gray-900 dark:text-white mt-1">
+                                      {new Date(user.date_joined).toLocaleDateString('en-US', {
+                                        month: 'long',
+                                        day: 'numeric',
+                                        year: 'numeric'
+                                      })}
+                                    </p>
+                                  </div>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
